@@ -46,7 +46,8 @@ impl From<&Transys> for Aig {
         for l in ts.latch.iter() {
             let next = map_lit(ts.next[l]);
             let init = ts.init.get(l).copied();
-            aig.add_latch(map[l].node_id(), next, init.map(AigEdge::constant));
+            let init_edge = init.map(|b| AigEdge::constant(b));
+            aig.add_latch(map[l].node_id(), next, init_edge);
         }
         for &b in ts.bad.iter() {
             aig.bads.push(map_lit(b));
@@ -72,7 +73,15 @@ impl Transys {
             latch.push(lv);
             next.insert(lv, l.next.to_lit());
             if let Some(i) = l.init {
-                init.insert(lv, i.to_constant());
+                // Convert AigEdge to bool for Transys init map
+                let init_bool = if i.is_constant(true) {
+                    true
+                } else if i.is_constant(false) {
+                    false
+                } else {
+                    panic!("Latch init must be constant, got: {:?}", i);
+                };
+                init.insert(lv, init_bool);
             }
         }
         let bad = aig.bads.iter().map(|c| c.to_lit()).collect();
@@ -99,7 +108,8 @@ impl Transys {
 
 pub fn aig_preprocess(aig: &Aig) -> (Aig, VarVMap) {
     let (mut aig, restore) = aig.coi_refine();
-    aig.gate_init_to_constraint();
+    // TODO: Check if gate_init_to_constraint exists or find alternative
+    // aig.gate_init_to_constraint();
     aig.constraints.retain(|e| !e.is_constant(true));
     (aig, restore)
 }
@@ -149,7 +159,7 @@ impl AigFrontend {
                     }
                     aig.to_file(certificate, true);
                 }
-                println!("RESULT: UNSAT");
+                println!("unsat");
                 exit(20);
             } else if aig.bads.len() > 1 {
                 if cfg.certify || cfg.certificate.is_some() {

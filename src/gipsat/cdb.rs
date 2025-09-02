@@ -300,13 +300,13 @@ impl ClauseDB {
     #[inline]
     #[allow(unused)]
     pub fn num_leanrt(&self) -> usize {
-        self.learnt.len()
+        self.learnt.len().try_into().unwrap()
     }
 
     #[inline]
     #[allow(unused)]
     pub fn num_lemma(&self) -> usize {
-        self.lemmas.len()
+        self.lemmas.len().try_into().unwrap()
     }
 }
 

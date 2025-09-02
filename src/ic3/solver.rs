@@ -170,3 +170,83 @@ impl IC3 {
         var
     }
 }
+
+//*
+impl IC3 {
+    pub fn multi_timeframe_get_pred(&mut self, strengthen: bool) -> (LitVec, Vec<LitVec>) {
+        let start = Instant::now();
+        let solver = &mut self.multi_timeframe_solver;
+        let mut cls: LitVec = solver.get_assump().clone();
+        cls.extend_from_slice(&self.abs_cst);
+        if cls.is_empty() {
+            return (LitVec::new(), vec![]);
+        }
+
+        let in_cls: GHashSet<Var> = GHashSet::from_iter(cls.iter().map(|l| l.var()));
+        let cls = !cls;
+        let mut inputs = vec![LitVec::default(); self.timeframe_expansion];
+        let mut inputs_flat = LitVec::new();
+
+        for (index, input) in self.multi_timeframe_ts.inputs.iter().enumerate() {
+            let lit = input.lit();
+            if let Some(v) = solver.sat_value(lit) {
+                let num_input = self.ts.inputs.len();
+                let timeframe = index / num_input;
+                let index_in_timeframe = index % num_input;
+                let lit_in_frame_0 = self.ts.inputs[index_in_timeframe].lit();
+                inputs[timeframe].push(lit_in_frame_0.not_if(!v));
+                inputs_flat.push(lit.not_if(!v));
+                assert!(self.multi_timeframe_ts_unroll.lit_next(lit_in_frame_0, timeframe) == lit);
+            }
+        }
+        self.multi_timeframe_lift.set_domain(cls.iter().cloned());
+        let mut latchs = LitVec::new();
+        for latch in self.multi_timeframe_ts.latchs.iter() {
+            let lit = latch.lit();
+            if self.multi_timeframe_lift.domain_has(lit.var())
+                && let Some(v) = solver.sat_value(lit)
+                && (in_cls.contains(latch) || !solver.flip_to_none(*latch))
+            {
+                latchs.push(lit.not_if(!v));
+            }
+        }
+        let inn: Box<dyn FnMut(&mut LitVec)> = Box::new(|cube: &mut LitVec| {
+            cube.sort();
+            cube.reverse();
+        });
+        let act: Box<dyn FnMut(&mut LitVec)> = Box::new(|cube: &mut LitVec| {
+            self.activity.sort_by_activity(cube, false);
+        });
+        let rev: Box<dyn FnMut(&mut LitVec)> = Box::new(|cube: &mut LitVec| {
+            cube.reverse();
+        });
+        let mut order = if self.cfg.ic3.inn || !self.auxiliary_var.is_empty() {
+            vec![inn, act, rev]
+        } else {
+            vec![act, rev]
+        };
+        for i in 0.. {
+            if latchs.is_empty() {
+                break;
+            }
+            if let Some(f) = order.get_mut(i) {
+                f(&mut latchs);
+            } else {
+                latchs.shuffle(&mut self.rng);
+            }
+            let olen = latchs.len();
+            latchs = self.multi_timeframe_lift.minimal_pred(&inputs_flat, &latchs, &cls).unwrap();
+            if latchs.len() == olen || !strengthen {
+                break;
+            }
+        }
+        self.multi_timeframe_lift.unset_domain();
+        self.statistic.block_get_predecessor_time += start.elapsed();
+
+// println!("*** multi_timeframe_get_pred ***");
+// println!("timeframe_expansion: {}", self.timeframe_expansion);
+
+        (latchs, inputs)
+    }
+}
+//*/

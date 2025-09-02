@@ -60,7 +60,11 @@ impl DagCnfSolver {
             dc: dc.clone(),
             cdb: Default::default(),
             watchers: Default::default(),
-            value: VarAssign::new_with(constrain_act),
+            value: {
+                let mut v = VarAssign::new();
+                v.reserve(constrain_act);
+                v
+            },
             trail: Default::default(),
             pos_in_trail: Default::default(),
             level: VarMap::new_with(constrain_act),
@@ -82,9 +86,12 @@ impl DagCnfSolver {
             rng: StdRng::seed_from_u64(rseed),
             mark: Default::default(),
         };
-        while solver.num_var() < solver.dc.num_var() {
+        while solver.num_var() < usize::from(solver.dc.max_var()) {
             solver.new_var();
         }
+        // Set constrain_act to a safe variable that won't conflict with problem variables
+        solver.constrain_act = Var::new(usize::from(solver.dc.max_var()) + 1);
+        solver.new_var(); // Create the constrain_act variable
         for cls in dc.clause() {
             solver.add_clause_inner(cls, ClauseKind::Trans);
         }
@@ -194,7 +201,7 @@ impl DagCnfSolver {
             }
         }
         self.statistic.avg_decide_var +=
-            self.domain.len() as f64 / (self.dc.num_var() - self.trail.len()) as f64;
+            self.domain.len() as f64 / (usize::from(self.dc.max_var()) - usize::try_from(self.trail.len()).unwrap()) as f64;
         true
     }
 

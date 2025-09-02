@@ -161,6 +161,7 @@ impl TransysUnroll<Transys> {
         let mut constraint = LitVec::new();
         let mut rel = self.ts.rel.clone();
         for u in 0..=self.num_unroll {
+// println!("u: {}", u);
             for i in self.ts.input.iter() {
                 input.push(self.lit_next(i.lit(), u).var());
             }
@@ -168,6 +169,7 @@ impl TransysUnroll<Transys> {
                 let c = self.lit_next(*c, u);
                 constraint.push(c);
             }
+// println!("constraint: {}", constraint);
             for (v, cls) in self.ts.rel.iter() {
                 let v = self.var_next(v, u);
                 if v <= rel.max_var() && rel.has_rel(v) {

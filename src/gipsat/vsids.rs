@@ -223,7 +223,7 @@ impl Vsids {
         }
         self.bucket
             .buckets
-            .reserve(self.activity.bucket_table[self.activity.bucket_table.len() - 1] as usize + 1);
+            .reserve((self.activity.bucket_table[self.activity.bucket_table.len() - 1] as usize + 1).try_into().unwrap());
     }
 
     #[inline]

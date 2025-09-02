@@ -61,12 +61,17 @@ impl AigFrontend {
         let mut line = String::new();
         let mut state = Vec::new();
         for l in self.origin_aig.latchs.iter() {
-            let r = if let Some(r) = map.get(&Var::new(l.input)) {
+            let r = if let Some(r) = l.init {
+                // Convert AigEdge to bool
+                if r.is_constant(true) {
+                    true
+                } else if r.is_constant(false) {
+                    false
+                } else {
+                    panic!("Latch init must be constant, got: {:?}", r);
+                }
+            } else if let Some(r) = map.get(&Var::new(l.input)) {
                 *r
-            } else if let Some(r) = l.init
-                && let Some(r) = r.try_to_constant()
-            {
-                r
             } else {
                 true
             };

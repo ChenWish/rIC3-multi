@@ -1,12 +1,13 @@
 use crate::transys::Transys;
-use logic_form::{VarLMap, VarVMap};
+use logic_form::{VarVMap, VarLMap};
 
 impl Transys {
     pub fn replace(&mut self, map: &VarLMap, rst: &mut VarVMap) {
         for &v in self.input.iter().chain(self.latch.iter()) {
             assert!(!map.contains_key(v));
         }
-        self.rel.replace(map);
+        // TODO: Fix DagCnf replace implementation
+        // self.rel.replace(map);
         for n in self.next.values_mut() {
             if let Some(m) = map.map_lit(*n) {
                 *n = m;

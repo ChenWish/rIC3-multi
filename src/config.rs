@@ -115,6 +115,10 @@ pub struct IC3Options {
     /// ic3 full assignment of last bad (used in rlive)
     #[arg(long = "ic3-full-bad", default_value_t = false)]
     pub full_bad: bool,
+
+    /// ic3 with multi-timeframe optimization
+    #[arg(long = "ic3-multi", default_value_t = false)]
+    pub multi_timeframe: bool,
 }
 
 #[derive(Args, Clone, Debug)]

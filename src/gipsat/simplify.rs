@@ -28,7 +28,7 @@ impl DagCnfSolver {
     pub fn simplify(&mut self) {
         assert!(self.highest_level() == 0);
         assert!(self.propagate() == CREF_NONE);
-        if self.statistic.num_solve > self.simplify.last_simplify + 1000 {
+        if self.statistic.num_solve > self.simplify.last_simplify + 100 {
             if self.simplify.last_num_assign < self.trail.len() {
                 self.simplify_satisfied();
                 self.simplify.last_simplify = self.statistic.num_solve;
@@ -37,7 +37,7 @@ impl DagCnfSolver {
                 self.simplify_satisfied();
                 let lemmas = take(&mut self.cdb.lemmas);
                 self.cdb.lemmas = self.simplify_subsume(lemmas);
-                self.simplify.last_num_lemma = self.cdb.lemmas.len();
+                self.simplify.last_num_lemma = self.cdb.lemmas.len().try_into().unwrap();
             }
             self.garbage_collect();
         }
@@ -68,7 +68,7 @@ impl DagCnfSolver {
 
     pub fn simplify_satisfied(&mut self) {
         assert!(self.highest_level() == 0);
-        if self.simplify.last_num_assign >= self.trail.len() {
+        if self.simplify.last_num_assign >= self.trail.len().try_into().unwrap() {
             return;
         }
         let lemmas = take(&mut self.cdb.lemmas);

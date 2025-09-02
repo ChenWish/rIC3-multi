@@ -69,14 +69,19 @@ impl Portfolio {
             }
             engines.push(engine);
         };
-        new_engine("-e ic3 --ic3-no-ctg");
+        new_engine("-e ic3 --ic3-multi");
+        new_engine("-e ic3 --ic3-multi --ic3-no-ctg");
+
+        // new_engine("-e ic3 --no-ic3-ctg");
+        // new_engine("-e ic3 --no-ic3-ctg --ic3-ctp --rseed 5555");
         new_engine("-e ic3 --ic3-no-ctg --ic3-ctp --rseed 5555");
         new_engine("-e ic3 --ic3-dynamic --rseed 55");
-        new_engine("-e ic3");
+        // new_engine("-e ic3");
         new_engine("-e ic3 --ic3-ctg-limit 5");
         new_engine("-e ic3 --ic3-ctg-max 5 --ic3-ctg-limit 15");
         new_engine("-e ic3 --ic3-abs-cst --rseed 55");
         new_engine("-e ic3 --ic3-ctp");
+        // new_engine("-e ic3 --no-ic3-ctg --ic3-inn");
         new_engine("-e ic3 --ic3-no-ctg --ic3-inn");
         new_engine("-e ic3 --ic3-inn");
         new_engine("-e ic3 --ic3-ctg-limit 5 --ic3-inn");
@@ -85,6 +90,7 @@ impl Portfolio {
         new_engine("-e bmc --bmc-kissat --step 70");
         new_engine("-e bmc --bmc-kissat --step 135");
         new_engine("-e kind --step 1 --kind-simple-path");
+
         let ps = PortfolioState::new(engines.len());
         Self {
             cfg,
@@ -283,18 +289,18 @@ pub fn portfolio_main(cfg: Config) {
     let res = engine.check();
     match res {
         Some(true) => {
-            println!("RESULT: UNSAT");
+            println!("unsat");
             if cfg.witness {
                 println!("0");
             }
             certificate(&mut engine, &cfg, true)
         }
         Some(false) => {
-            println!("RESULT: SAT");
+            println!("sat");
             certificate(&mut engine, &cfg, false)
         }
         _ => {
-            println!("RESULT: UNKNOWN");
+            println!("unknown");
             if cfg.witness {
                 println!("2");
             }

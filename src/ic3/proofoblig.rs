@@ -36,7 +36,8 @@ impl PartialOrd for ProofObligationInner {
 impl Ord for ProofObligationInner {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
-        match other.frame.cmp(&self.frame) {
+        match other.frame.cmp(&self.frame) { // higher first, original rIC3
+        // match self.frame.cmp(&other.frame) { // lower first
             Ordering::Equal => match self.depth.cmp(&other.depth) {
                 Ordering::Equal => match other.lemma.len().cmp(&self.lemma.len()) {
                     Ordering::Equal => match other.lemma.cmp(&self.lemma) {

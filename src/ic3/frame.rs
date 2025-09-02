@@ -304,3 +304,90 @@ impl IC3 {
     //     }
     // }
 }
+
+//*
+impl IC3 {
+    #[inline]
+    pub fn multi_timeframe_add_lemma(
+        &mut self,
+        frame: usize,
+        lemma: LitVec,
+        contained_check: bool,
+        po: Option<ProofObligation>,
+    ) -> bool {
+        let lemma = LitOrdVec::new(lemma);
+        trace!("add lemma: frame:{frame}, {lemma}");
+        if frame == 0 {
+            assert!(self.frame.len() == 1);
+            self.solvers[0].add_clause(&!lemma.cube());
+            if !self.cfg.ic3.no_pred_prop && self.level() == frame {
+                self.bad_solver.add_clause(&!lemma.cube());
+            }
+            self.frame[0].push(FrameLemma::new(lemma, po, None));
+            return false;
+        }
+        if contained_check && self.frame.trivial_contained(frame, &lemma).is_some() {
+            return false;
+        }
+        if self.ts.cube_subsume_init(lemma.cube()) {
+            assert!(self.cfg.ic3.inn);
+        }
+        let mut begin = None;
+        // let mut inv_found = false;
+        
+        // DEBUG: inductive fail
+        //*
+        'fl: for i in (1..=frame).rev() {
+            let mut j = 0;
+            while j < self.frame[i].len() {
+                let l = &self.frame[i][j];
+                if begin.is_none() && l.subsume(&lemma) {
+                    if l.eq(&lemma) {
+                        // self.frame[i].swap_remove(j);
+                        let clause = !lemma.cube();
+                        for k in i + 1..=frame {
+                            self.solvers[k].add_clause(&clause);
+                            self.frame[k].push(FrameLemma::new(lemma.clone(), po.clone(), None));
+                        }
+                        if !self.cfg.ic3.no_pred_prop && self.level() == frame {
+                            self.bad_solver.add_clause(&!lemma.cube());
+                        }
+                        self.frame.early = self.frame.early.min(i); // i+1 or i?
+                        return false;
+                        // self.frame[frame].push(FrameLemma::new(lemma, po, None));
+                        // self.frame.early = self.frame.early.min(i + 1);
+                        // return self.frame[i].is_empty();
+                    } else {
+                        begin = Some(i + 1);
+                        break 'fl;
+                    }
+                }
+                if lemma.subsume(l) {
+                    let _remove = self.frame[i].swap_remove(j);
+                    // self.solvers[i].remove_lemma(&remove);
+                    continue;
+                }
+                j += 1;
+            }
+            // if i != frame && self.frame[i].is_empty() {
+            //     inv_found = true;
+            // }
+        }
+        // */
+        let clause = !lemma.cube();
+        let begin = begin.unwrap_or(1);
+        for i in begin..=frame {
+            self.solvers[i].add_clause(&clause);
+            self.frame[i].push(FrameLemma::new(lemma.clone(), po.clone(), None));
+        }
+        if !self.cfg.ic3.no_pred_prop && self.level() == frame {
+            self.bad_solver.add_clause(&!lemma.cube());
+        }
+
+        // self.frame[frame].push(FrameLemma::new(lemma, po, None));
+        self.frame.early = self.frame.early.min(begin);
+        // inv_found
+        false
+    }
+}
+//*/

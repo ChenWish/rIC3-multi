@@ -8,23 +8,27 @@ use satif::Satif;
 pub fn verify_invariant(ts: &TransysCtx, invariants: &[LitVec]) -> bool {
     let mut solver = Solver::new();
     ts.load_trans(&mut solver, true);
+println!("check initial state in invariant");
     for lemma in invariants {
         let assump: LitVec = ts.init.iter().chain(lemma.iter()).copied().collect();
         if solver.solve(&assump) {
             return false;
         }
     }
+println!("check bad not in invariant");
     for lemma in invariants {
         solver.add_clause(&!lemma);
     }
     if solver.solve(&ts.bad.cube()) {
         return false;
     }
+println!("check inductive invariant");
     for lemma in invariants {
         if solver.solve(&ts.lits_next(lemma)) {
             return false;
         }
     }
+println!("all verify invariant pass");
     true
 }
 

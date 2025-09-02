@@ -34,8 +34,12 @@ impl Witness {
     }
 
     pub fn filter_map_var(&self, f: impl Fn(Var) -> Option<Var>) -> Self {
-        let input = self.input.iter().map(|w| w.filter_map_var(&f)).collect();
-        let state = self.state.iter().map(|w| w.filter_map_var(&f)).collect();
+        let input = self.input.iter().map(|w| {
+            w.iter().filter_map(|l| f(l.var()).map(|v| l.map_var(|_| v))).collect()
+        }).collect();
+        let state = self.state.iter().map(|w| {
+            w.iter().filter_map(|l| f(l.var()).map(|v| l.map_var(|_| v))).collect()
+        }).collect();
         Self { input, state }
     }
 

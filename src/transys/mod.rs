@@ -63,6 +63,7 @@ pub trait TransysIf {
         if constraint {
             for c in self.constraint() {
                 satif.add_clause(&[c]);
+// println!("cadical constraint: {}", c);
             }
         }
     }

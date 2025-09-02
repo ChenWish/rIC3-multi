@@ -274,3 +274,224 @@ impl IC3 {
         }
     }
 }
+
+//*
+impl IC3 {
+    pub fn multi_timeframe_mic(
+        &mut self,
+        frame: usize,
+        cube: LitVec,
+        constraint: &[LitVec],
+        mic_type: MicType,
+        timeframe_expansion: usize,
+    ) -> LitVec {
+        match mic_type {
+            MicType::NoMic => cube,
+            MicType::DropVar(parameter) => self.multi_timeframe_mic_by_drop_var(frame, cube, constraint, parameter, timeframe_expansion),
+        }
+    }
+
+    pub fn multi_timeframe_mic_by_drop_var(
+        &mut self,
+        frame: usize,
+        mut cube: LitVec,
+        constraint: &[LitVec],
+        parameter: DropVarParameter,
+        timeframe_expansion: usize,
+    ) -> LitVec {
+        let start: Instant = Instant::now();
+        
+        if parameter.level == 0 {
+            self.multi_timeframe_solver.set_domain(
+                self.ts
+                    .lits_next(&cube)
+                    .iter()
+                    .copied()
+                    .chain(cube.iter().copied()),
+            );
+        }
+        self.statistic.avg_mic_cube_len += cube.len();
+        self.statistic.num_mic += 1;
+        let mut cex = Vec::new();
+        self.activity.sort_by_activity(&mut cube, true);
+        let mut keep = GHashSet::new();
+        let mut i = 0;
+        while i < cube.len() {
+            if keep.contains(&cube[i]) {
+                i += 1;
+                continue;
+            }
+            let mut removed_cube = cube.clone();
+            removed_cube.remove(i);
+            let mic = if parameter.level == 0 {
+                self.multi_timeframe_down(&removed_cube, &keep, &cube, constraint, &mut cex)
+            } else {
+                self.multi_timeframe_ctg_down(frame, &removed_cube, &keep, &cube, parameter, timeframe_expansion)
+            };
+            if let Some(new_cube) = mic {
+                self.statistic.mic_drop.success();
+                (cube, i) = self.handle_down_success(frame, cube, i, new_cube);
+                if parameter.level == 0 {
+                    self.multi_timeframe_solver.unset_domain();
+                    self.multi_timeframe_solver.set_domain(
+                        self.multi_timeframe_ts
+                            .lits_next(&cube)
+                            .iter()
+                            .copied()
+                            .chain(cube.iter().copied()),
+                    );
+                }
+            } else {
+                self.statistic.mic_drop.fail();
+                keep.insert(cube[i]);
+                i += 1;
+            }
+        }
+        if parameter.level == 0 {
+            self.multi_timeframe_solver.unset_domain();
+        }
+        self.activity.bump_cube_activity(&cube);
+        self.statistic.block_mic_time += start.elapsed();
+        cube
+    }
+
+    fn multi_timeframe_down(
+        &mut self,
+        cube: &LitVec,
+        keep: &GHashSet<Lit>,
+        full: &LitVec,
+        constraint: &[LitVec],
+        cex: &mut Vec<(LitOrdVec, LitOrdVec)>,
+    ) -> Option<LitVec> {
+        let mut cube = cube.clone();
+        self.statistic.num_down += 1;
+        loop {
+            if self.ts.cube_subsume_init(&cube) {
+                return None;
+            }
+            let lemma = LitOrdVec::new(cube.clone());
+            if cex
+                .iter()
+                .any(|(s, t)| !lemma.subsume(s) && lemma.subsume(t))
+            {
+                return None;
+            }
+            self.statistic.num_down_sat += 1;
+
+            let is_blocked = self.multi_timeframe_blocked_with_ordered_with_constrain(
+                &cube,
+                false,
+                true,
+                constraint.to_vec(),
+            );
+
+            if is_blocked {
+                return Some(self.multi_timeframe_solver.inductive_core());
+            }
+
+            let mut ret = false;
+            let mut cube_new = LitVec::new();
+            for lit in cube {
+                if keep.contains(&lit) {
+                    if let Some(true) = self.multi_timeframe_solver.sat_value(lit) {
+                        cube_new.push(lit);
+                    } else {
+                        ret = true;
+                        break;
+                    }
+                } else if let Some(true) = self.multi_timeframe_solver.sat_value(lit) {
+                    if !self.multi_timeframe_solver.flip_to_none(lit.var()) {
+                        cube_new.push(lit);
+                    }
+                }
+            }
+            cube = cube_new;
+            let mut s = LitVec::new();
+            let mut t = LitVec::new();
+            for l in full.iter() {
+                if let Some(v) = self.multi_timeframe_solver.sat_value(*l) {
+                    if !self.multi_timeframe_solver.flip_to_none(l.var()) {
+                        s.push(l.not_if(!v));
+                    }
+                }
+                let lt = self.ts.next(*l);
+                if let Some(v) = self.multi_timeframe_solver.sat_value(lt) {
+                    t.push(l.not_if(!v));
+                }
+            }
+            cex.push((LitOrdVec::new(s), LitOrdVec::new(t)));
+            if ret {
+                return None;
+            }
+        }
+    }
+
+    fn multi_timeframe_ctg_down(
+        &mut self,
+        frame: usize,
+        cube: &LitVec,
+        keep: &GHashSet<Lit>,
+        full: &LitVec,
+        parameter: DropVarParameter,
+        timeframe_expansion: usize,
+    ) -> Option<LitVec> {
+        let mut cube = cube.clone();
+        self.statistic.num_down += 1;
+        let mut ctg = 0;
+        loop {
+            if self.ts.cube_subsume_init(&cube) {
+                return None;
+            }
+            self.statistic.num_down_sat += 1;
+
+            let is_blocked = self.multi_timeframe_blocked_with_ordered(
+                &cube,
+                false,
+                true,
+            );
+
+            if is_blocked {
+                return Some(self.multi_timeframe_solver.inductive_core());
+            }
+
+            for lit in cube.iter() {
+                if keep.contains(lit) && !self.multi_timeframe_solver.sat_value(*lit).is_some_and(|v| v)
+                {
+                    return None;
+                }
+            }
+            let (model, _) = self.multi_timeframe_get_pred(false);
+            let cex_set: GHashSet<Lit> = GHashSet::from_iter(model.iter().cloned());
+            for lit in cube.iter() {
+                if keep.contains(lit) && !cex_set.contains(lit) {
+                    return None;
+                }
+            }
+            if ctg < parameter.max
+                && (frame - timeframe_expansion >= 1) // frame > 1
+                && !self.ts.cube_subsume_init(&model)
+                && self.trivial_block(
+                    frame - timeframe_expansion, // frame - 1
+                    LitOrdVec::new(model.clone()),
+                    &[!full.clone()],
+                    parameter.sub_level(),
+                )
+            {
+                ctg += 1;
+                continue;
+            }
+            ctg = 0;
+            let mut cube_new = LitVec::new();
+            for lit in cube {
+                if cex_set.contains(&lit) {
+                    cube_new.push(lit);
+                } else if keep.contains(&lit) {
+                    return None;
+                }
+            }
+            cube = cube_new;
+        }
+    }
+
+}
+//*/
