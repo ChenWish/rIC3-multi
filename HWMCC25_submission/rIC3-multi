@@ -1,27 +1,46 @@
 #!/bin/bash
 
-# HWMCC25 wrapper for rIC3
-# Usage: rIC3_wrapper.sh <benchmark> <sat_cert> <unsat_cert>
+# HWMCC25 wrapper for rIC3 with ABC preprocessing
+# Usage: rIC3-multi_abc <benchmark> <sat_cert> <unsat_cert>
 
 BENCHMARK="$1"
 SAT_CERT="$2"
 UNSAT_CERT="$3"
 
 if [ -z "$BENCHMARK" ]; then
-    echo "Usage: rIC3_wrapper.sh <benchmark> <sat_cert> <unsat_cert>"
+    echo "Usage: rIC3-multi_abc <benchmark> <sat_cert> <unsat_cert>"
     exit 1
 fi
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
-# RIC3_BINARY="$SCRIPT_DIR/rIC3"
 RIC3_BINARY="$SCRIPT_DIR/rIC3"
+ABC_BINARY="$SCRIPT_DIR/abc"
+
+# Convert benchmark to absolute path
+BENCHMARK_ABS="$(readlink -f "$BENCHMARK")"
+
+# Extract pure benchmark filename (without directory path)
+BENCHMARK_NAME="$(basename "$BENCHMARK")"
+
+# Create preprocessed benchmark filename in /tmp/ with abc_ prefix
+BENCHMARK_ABC="/tmp/abc_${BENCHMARK_NAME}"
+
+# Preprocess benchmark with ABC using absolute path
+echo "Preprocessing benchmark with ABC..."
+$ABC_BINARY -c "read $BENCHMARK_ABS; orchestrate; write_aiger -s $BENCHMARK_ABC" > /dev/null 2>&1
+
+# Check if ABC preprocessing was successful
+if [ ! -f "$BENCHMARK_ABC" ]; then
+    echo "ABC preprocessing failed, using original benchmark"
+    BENCHMARK_ABC="$BENCHMARK"
+fi
 
 # For bit-level (AIG), use temporary certificate file
 TEMP_CERT="/tmp/temp_cert"
 
-# Call rIC3 with the benchmark and temporary certificate path
-output=$($RIC3_BINARY "$BENCHMARK" "$TEMP_CERT" 2>&1)
+# Call rIC3 with the preprocessed benchmark and temporary certificate path
+output=$($RIC3_BINARY "$BENCHMARK_ABC" "$TEMP_CERT" 2>&1)
 exit_code=$?
 
 # Extract the result from rIC3's output
@@ -32,6 +51,10 @@ if echo "$output" | grep -qi "^SAT$\|^RESULT: SAT$\|result: unsafe"; then
     if [ -f "$TEMP_CERT" ]; then
         cp "$TEMP_CERT" "$SAT_CERT"
     fi
+    # Cleanup preprocessed file if it was created
+    if [ "$BENCHMARK_ABC" != "$BENCHMARK" ] && [ -f "$BENCHMARK_ABC" ]; then
+        rm -f "$BENCHMARK_ABC"
+    fi
     exit 0
 elif echo "$output" | grep -qi "^UNSAT$\|^RESULT: UNSAT$\|result: safe"; then
     # UNSAT case - property holds
@@ -40,9 +63,22 @@ elif echo "$output" | grep -qi "^UNSAT$\|^RESULT: UNSAT$\|result: safe"; then
     if [ -f "$TEMP_CERT" ]; then
         cp "$TEMP_CERT" "$UNSAT_CERT"
     fi
+    # Cleanup preprocessed file if it was created
+    if [ "$BENCHMARK_ABC" != "$BENCHMARK" ] && [ -f "$BENCHMARK_ABC" ]; then
+        rm -f "$BENCHMARK_ABC"
+    fi
     exit 0
 else
     # Unknown or error case
     echo "unknown"
+    # Cleanup preprocessed file if it was created
+    if [ "$BENCHMARK_ABC" != "$BENCHMARK" ] && [ -f "$BENCHMARK_ABC" ]; then
+        rm -f "$BENCHMARK_ABC"
+    fi
     exit 1
+fi
+
+# Cleanup preprocessed file if it was created
+if [ "$BENCHMARK_ABC" != "$BENCHMARK" ] && [ -f "$BENCHMARK_ABC" ]; then
+    rm -f "$BENCHMARK_ABC"
 fi

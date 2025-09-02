@@ -38,16 +38,19 @@ The tool outputs one of the following results to stdout:
 ## About rIC3-multi
 
 rIC3-multi is an enhanced version of the rIC3 model checker with multi-timeframe optimization capabilities. It extends IC3/PDR (Property Directed Reachability) algorithm with multi-timeframe reasoning.
+We also use ABC (A System for Sequential Synthesis and Verification) for circuit simplification preprocessing to improve verification performance.
 
 ### Key Features
 
 - IC3/PDR algorithm with multi-timeframe blocking
 - Dynamic timeframe expansion strategy
+- ABC circuit simplification for preprocessing optimization
 
 ## Files
 
 - `rIC3-multi`: Wrapper script implementing HWMCC25 interface
 - `rIC3`: Main rIC3 binary executable
+- `abc`: ABC executable
 
 ## License
 
