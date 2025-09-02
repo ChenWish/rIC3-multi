@@ -1,3 +1,15 @@
+# About this fork
+
+This repository is a fork of [rIC3](https://github.com/gipsyh/rIC3) by [Yuheng Su](https://github.com/gipsyh).  
+The core framework and implementation are from the original project.  
+My main contribution is the addition of a **multi-timeframe IC3 algorithm**, while the rest of the code base follows the original design.  
+
+The purpose of this fork is to prepare a version of the tool for participation in the **HWMCC 2025 bit-level track**.  
+
+This project continues to adopt the same license as the original (GPLv3).  
+All credits for the original implementation and its achievements (including HWMCC’24 results and related publications) go to the original author. My contribution lies in implementing the proposed multi-timeframe IC3 algorithm on top of the original framework, while all other parts remain the author’s work.
+
+
 # rIC3 Hardware Model Checker
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
