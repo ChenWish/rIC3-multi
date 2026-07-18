@@ -143,6 +143,10 @@ pub struct IC3Config {
     /// ic3 with finding parent lemma in mic
     #[arg(long = "ic3-parent-lemma", action = ArgAction::Set, default_value_t = true)]
     pub parent_lemma: bool,
+
+    /// ic3 with multi-timeframe optimization
+    #[arg(long = "ic3-multi", default_value_t = false)]
+    pub multi_timeframe: bool,
 }
 
 impl IC3Config {

@@ -9,8 +9,8 @@ use std::time::Instant;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DropVarParameter {
     pub limit: usize,
-    max: usize,
-    level: usize,
+    pub max: usize,
+    pub level: usize,
 }
 
 impl DropVarParameter {
@@ -19,7 +19,7 @@ impl DropVarParameter {
         Self { limit, max, level }
     }
 
-    fn sub_level(self) -> Self {
+    pub fn sub_level(self) -> Self {
         Self {
             limit: self.limit,
             max: self.max,

@@ -21,11 +21,15 @@ mod block;
 mod frame;
 mod localabs;
 mod mic;
+mod multitf;
+mod percentile;
 mod proofoblig;
 mod propagate;
 mod solver;
 mod statistic;
 mod verify;
+
+use percentile::BoundedMedianCalculator;
 
 pub struct IC3 {
     cfg: Config,
@@ -36,6 +40,8 @@ pub struct IC3 {
     lift: TransysSolver,
     frame: Frames,
     obligations: ProofObligationQueue,
+    /// Solver construction time; drives the ceiling ramp (RIC3_MT_RATIO_RAMP_SEC).
+    mt_solver_start: Instant,
     activity: Activity,
     statistic: Statistic,
     localabs: LocalAbs,
@@ -45,6 +51,40 @@ pub struct IC3 {
     rng: StdRng,
 
     filog: IntervalLogger,
+
+    // Multi-timeframe optimization fields
+    /// Original transition system with !bad as constraint (for multi-timeframe unrolling)
+    mt_origin_ts: Transys,
+    /// Unrolled transition system for multi-timeframe
+    mt_unroll: TransysUnroll<Transys>,
+    /// Context for multi-timeframe solver
+    mt_tsctx: Grc<TransysCtx>,
+    /// Solver for multi-timeframe blocking queries
+    mt_solver: TransysSolver,
+    /// Lift solver for multi-timeframe predecessor extraction
+    mt_lift: TransysSolver,
+    /// Current timeframe expansion factor (starts at 1, doubles on restart)
+    timeframe_expansion: usize,
+    /// abs-threshold multiplier scaled with expansion within a blocking phase
+    /// (RIC3_MT_ABS_EXPAND_FACTOR): reset to 1.0 when `timeframe_expansion` resets
+    /// to 1, multiplied by the factor on each escalation. Gives larger
+    /// expansions proportionally more time before the next restart fires.
+    mt_abs_mult: f64,
+    /// Earned ceiling doublings (up to RIC3_MT_EXP_OVERSHOOT): incremented when
+    /// the trigger keeps firing at the ceiling, reset alongside
+    /// `timeframe_expansion`/`mt_abs_mult`.
+    mt_overshoot_used: usize,
+    /// Level at which the current overshoot allowance was earned (usize::MAX
+    /// when none). The allowance survives phase resets while the level is
+    /// unchanged.
+    mt_overshoot_level: usize,
+    /// A dynamic-mode restart cleared the obligation queue; the next `block()`
+    /// call continues the same blocking phase and must keep the escalated
+    /// `timeframe_expansion` (mirrors ABC re-seeding the original cube with
+    /// the doubled expansion inside the same BlockCube call).
+    mt_restart_pending: bool,
+    /// Median calculator for blocking time (tracks execution time of blocking queries)
+    blocking_time_median: BoundedMedianCalculator,
 }
 
 impl IC3 {
@@ -77,6 +117,7 @@ impl IC3 {
                 self.tsctx.add_init(i.var(), Lit::constant(i.polarity()));
             }
         }
+
     }
 
     fn base(&mut self) -> bool {
@@ -106,6 +147,17 @@ impl IC3 {
         inf_solver.dcs.set_rseed(rng.random());
         let lift = TransysSolver::new(&tsctx, false);
         let localabs = LocalAbs::new(&ts, &cfg);
+
+        // Initialize multi-timeframe fields
+        // Create a copy of the transition system with !bad as constraint
+        let mut mt_origin_ts = ts.clone();
+        mt_origin_ts.constraint.extend(ts.bad.iter().map(|l| !*l));
+        // Initial unroll (no extra unrolling yet, timeframe_expansion starts at 1)
+        let mt_unroll = TransysUnroll::new(&mt_origin_ts);
+        let mt_tsctx = Grc::new(mt_unroll.compile().ctx());
+        let mt_solver = TransysSolver::new(&mt_tsctx, true);
+        let mt_lift = TransysSolver::new(&mt_tsctx, false);
+
         Self {
             cfg,
             ts,
@@ -116,6 +168,7 @@ impl IC3 {
             lift,
             statistic,
             obligations: ProofObligationQueue::new(),
+            mt_solver_start: Instant::now(),
             frame,
             localabs,
             auxiliary_var: Vec::new(),
@@ -123,6 +176,20 @@ impl IC3 {
             rst,
             rng,
             filog: Default::default(),
+            // Multi-timeframe fields
+            mt_origin_ts,
+            mt_unroll,
+            mt_tsctx,
+            mt_solver,
+            mt_lift,
+            timeframe_expansion: 1,
+            mt_abs_mult: 1.0,
+            mt_overshoot_used: 0,
+            mt_overshoot_level: usize::MAX,
+            mt_restart_pending: false,
+            // max_size=1000, removal_ratio=0.2 (abc_PDR-multi uses the same
+            // window after raising it from 100)
+            blocking_time_median: BoundedMedianCalculator::new(1000, 0.2),
         }
     }
 

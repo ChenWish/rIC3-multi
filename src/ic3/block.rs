@@ -1,6 +1,7 @@
 use crate::ic3::{
     IC3,
     mic::{DropVarParameter, MicType},
+    multitf::MtBlockResult,
     proofoblig::ProofObligation,
 };
 use log::{debug, info, trace};
@@ -15,7 +16,7 @@ pub enum BlockResult {
 }
 
 impl IC3 {
-    fn push_lemma(&mut self, frame: usize, mut cube: LitVec) -> (usize, LitVec) {
+    pub(crate) fn push_lemma(&mut self, frame: usize, mut cube: LitVec) -> (usize, LitVec) {
         let start = Instant::now();
         for i in frame + 1..=self.level() {
             if self.solvers[i - 1].inductive(&cube, true) {
@@ -70,7 +71,21 @@ impl IC3 {
 
     pub fn block(&mut self, limit: Option<f64>) -> BlockResult {
         let mut noc = 0;
+        let mut popped_any = false;
+        let mut blocking_start = Instant::now();
+
+        if self.mt_restart_pending {
+            // Continuing a blocking phase interrupted by a dynamic-mode
+            // restart: keep the escalated expansion for this call.
+            self.mt_restart_pending = false;
+        } else {
+            self.timeframe_expansion = 1;
+            self.mt_abs_mult = 1.0;
+            self.mt_overshoot_phase_reset();
+        }
+
         while let Some(mut po) = self.obligations.pop(self.level()) {
+            popped_any = true;
             if po.removed {
                 continue;
             }
@@ -98,13 +113,29 @@ impl IC3 {
                         continue;
                     }
                 } else if po.frame > 0 {
+                    // An init-intersecting obligation above frame 0 would be
+                    // blocked ungated below (generalize's no-core branch),
+                    // producing a lemma that excludes an initial state.
                     let lemma = po.lemma.cube();
-                    debug_assert!(!self.solvers[0].solve(lemma));
+                    assert!(!self.solvers[0].solve(lemma));
                 } else {
                     self.add_obligation(po.clone());
                     return BlockResult::Failure;
                 }
             }
+
+            // Multi-timeframe restart check. Clearing the queue ends this
+            // `block()` call; `check()` re-seeds the unblocked bad state via
+            // `get_bad` and the next `block()` call continues with the
+            // escalated expansion (`mt_restart_pending`).
+            if self.is_time_to_restart(&blocking_start) {
+                self.update_timeframe_expansion();
+                self.obligations.clear();
+                self.mt_restart_pending = true;
+                blocking_start = Instant::now();
+                continue;
+            }
+
             if let Some((bf, _)) = self.frame.trivial_contained(Some(po.frame), &po.lemma) {
                 if let Some(bf) = bf {
                     po.push_to(bf + 1);
@@ -117,6 +148,29 @@ impl IC3 {
             if self.cfg.ic3.drop_po && po.act > 20.0 {
                 continue;
             }
+
+            // Check if we should use multi-timeframe blocking
+            if self.cfg.ic3.multi_timeframe
+                && po.frame == self.level()
+                && self.timeframe_expansion > 1
+            {
+                let cube = po.lemma.cube().clone();
+                let tf_exp = self.timeframe_expansion;
+                let frame = po.frame;
+                match self.mt_block(po.clone(), frame, &cube, tf_exp) {
+                    MtBlockResult::Proved => {
+                        debug!("fixpoint reached in multi-timeframe block");
+                        return BlockResult::Proved;
+                    }
+                    MtBlockResult::Handled => continue,
+                    // The mt path cannot soundly justify a lemma for this
+                    // obligation; process it with the standard path below.
+                    MtBlockResult::Fallback => {
+                        debug!("multi-timeframe block fallback at frame {frame}");
+                    }
+                }
+            }
+
             let blocked_start = Instant::now();
             let blocked = self.blocked_with_ordered(po.frame, &po.lemma, false);
             self.statistic.block.blocked_time += blocked_start.elapsed();
@@ -169,6 +223,23 @@ impl IC3 {
                     Some(po.clone()),
                 ));
                 self.add_obligation(po);
+            }
+        }
+
+        // Reset timeframe expansion after a completed blocking phase; keep it
+        // when a dynamic-mode restart interrupted the phase (the continuation
+        // happens in the next `block()` call).
+        //
+        // The median must only see real blocking episodes (abc_PDR-multi
+        // parity): restart-interrupted exits and calls that popped no
+        // obligation would otherwise record near-zero samples and drag the
+        // median towards 0, degenerating the relative restart condition.
+        if !self.mt_restart_pending {
+            self.timeframe_expansion = 1;
+            if popped_any {
+                self.blocking_time_median.add(blocking_start.elapsed());
+                self.statistic.mt.final_median = self.blocking_time_median.median();
+                self.statistic.mt.median_samples = self.blocking_time_median.count();
             }
         }
         BlockResult::Success
