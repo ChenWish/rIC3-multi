@@ -74,7 +74,10 @@ impl IC3 {
         let mut popped_any = false;
         let mut blocking_start = Instant::now();
 
-        if self.mt_restart_pending {
+        // Fixed expansion mode: expansion = min(level, fixed), active immediately
+        if let Some(fixed) = self.cfg.ic3.multi_fixed {
+            self.timeframe_expansion = fixed.min(self.level()).max(1);
+        } else if self.mt_restart_pending {
             // Continuing a blocking phase interrupted by a dynamic-mode
             // restart: keep the escalated expansion for this call.
             self.mt_restart_pending = false;
@@ -150,7 +153,7 @@ impl IC3 {
             }
 
             // Check if we should use multi-timeframe blocking
-            if self.cfg.ic3.multi_timeframe
+            if self.cfg.ic3.multi_enabled()
                 && po.frame == self.level()
                 && self.timeframe_expansion > 1
             {

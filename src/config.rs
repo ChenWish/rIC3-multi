@@ -147,12 +147,26 @@ pub struct IC3Config {
     /// ic3 with multi-timeframe optimization
     #[arg(long = "ic3-multi", default_value_t = false)]
     pub multi_timeframe: bool,
+
+    /// ic3 multi-timeframe with fixed expansion value
+    /// (bypasses the median-based trigger; expansion = min(level, N))
+    #[arg(long = "ic3-multi-fixed")]
+    pub multi_fixed: Option<usize>,
 }
 
 impl IC3Config {
+    /// Whether multi-timeframe blocking is enabled (dynamic or fixed mode).
+    pub fn multi_enabled(&self) -> bool {
+        self.multi_timeframe || self.multi_fixed.is_some()
+    }
+
     pub fn validate(&self) {
         if self.dynamic && self.drop_po {
             error!("cannot enable both ic3-dynamic and ic3-drop-po");
+            panic!();
+        }
+        if self.multi_fixed == Some(0) {
+            error!("ic3-multi-fixed must be >= 1");
             panic!();
         }
     }

@@ -206,7 +206,7 @@ impl IC3 {
     /// `update_timeframe_expansion`.
     ///
     /// Condition order mirrors the pseudocode:
-    /// 1. Gates: multi-timeframe enabled, level >= min_level.
+    /// 1. Gates: dynamic mode, multi-timeframe enabled, level >= min_level.
     /// 2. Easy — no expansion needed: elapsed time must exceed the absolute
     ///    threshold (abs_threshold, scaled by abs_expand_factor per
     ///    escalation) AND median_factor x the median blocking time (an empty
@@ -217,6 +217,10 @@ impl IC3 {
     ///    expansion. Hence a restart always strictly deepens, and the
     ///    deepened expansion is always >= 2 — for every config.
     pub(crate) fn is_time_to_restart(&mut self, start: &Instant) -> bool {
+        // Fixed expansion mode: expansion is set once per blocking phase, never restart
+        if self.cfg.ic3.multi_fixed.is_some() {
+            return false;
+        }
         if !self.cfg.ic3.multi_timeframe {
             return false;
         }

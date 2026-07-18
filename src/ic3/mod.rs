@@ -149,6 +149,9 @@ impl IC3 {
         let localabs = LocalAbs::new(&ts, &cfg);
 
         // Initialize multi-timeframe fields
+        if let Some(fixed) = cfg.ic3.multi_fixed {
+            info!("ic3 multi-timeframe with fixed expansion value: {fixed}");
+        }
         // Create a copy of the transition system with !bad as constraint
         let mut mt_origin_ts = ts.clone();
         mt_origin_ts.constraint.extend(ts.bad.iter().map(|l| !*l));
